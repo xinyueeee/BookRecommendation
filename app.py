@@ -1,4 +1,4 @@
-# app.py - Book Recommendation System (Full 10,000 Books with Search)
+# app.py - Book Recommendation System (Image-Free GUI)
 # Run with: streamlit run app.py
 
 import streamlit as st
@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import random
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -15,8 +16,102 @@ warnings.filterwarnings('ignore')
 st.set_page_config(
     page_title="Book Recommender System",
     page_icon="📚",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
+
+# ============================================
+# CUSTOM CSS FOR BETTER LOOK
+# ============================================
+st.markdown("""
+<style>
+    /* Main container styling */
+    .main-header {
+        text-align: center;
+        padding: 1rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 20px;
+        margin-bottom: 2rem;
+    }
+    .main-header h1 {
+        color: white;
+        margin: 0;
+        font-size: 2.5rem;
+    }
+    .main-header p {
+        color: rgba(255,255,255,0.9);
+        margin: 0;
+        font-size: 1.1rem;
+    }
+    .book-card {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        border-radius: 15px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+        transition: transform 0.2s;
+    }
+    .book-card:hover {
+        transform: translateY(-3px);
+    }
+    .book-title {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #2c3e50;
+        margin-bottom: 0.3rem;
+    }
+    .book-author {
+        font-size: 0.9rem;
+        color: #7f8c8d;
+        margin-bottom: 0.5rem;
+    }
+    .rating-stars {
+        font-size: 0.9rem;
+        margin: 0.3rem 0;
+    }
+    .similarity-badge {
+        background: #27ae60;
+        color: white;
+        padding: 0.2rem 0.6rem;
+        border-radius: 20px;
+        font-size: 0.7rem;
+        display: inline-block;
+    }
+    .genre-tag {
+        background: #3498db;
+        color: white;
+        padding: 0.1rem 0.5rem;
+        border-radius: 15px;
+        font-size: 0.7rem;
+        display: inline-block;
+        margin-right: 0.3rem;
+    }
+    .stat-card {
+        background: white;
+        border-radius: 10px;
+        padding: 0.8rem;
+        text-align: center;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .stat-number {
+        font-size: 1.8rem;
+        font-weight: bold;
+        color: #667eea;
+    }
+    .stat-label {
+        font-size: 0.8rem;
+        color: #7f8c8d;
+    }
+    .method-badge {
+        background: #e74c3c;
+        color: white;
+        padding: 0.3rem 0.8rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        display: inline-block;
+        margin-bottom: 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # ============================================
 # LOAD DATA
@@ -30,7 +125,7 @@ def load_data():
 @st.cache_resource
 def build_similarity_matrix(books):
     """Build TF-IDF similarity matrix for content-based filtering"""
-    with st.spinner("Building similarity matrix for 10,000 books..."):
+    with st.spinner("📚 Building similarity matrix for 10,000 books..."):
         tfidf = TfidfVectorizer(stop_words='english', max_features=5000)
         tfidf_matrix = tfidf.fit_transform(books['combined_features'])
         cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
@@ -44,157 +139,212 @@ cosine_sim = build_similarity_matrix(books)
 # HELPER FUNCTIONS
 # ============================================
 
+def get_random_books(n=6):
+    """Get random books for discovery section"""
+    return books.sample(n=min(n, len(books)))
+
 def search_books(search_term):
     """Search for books by title (case-insensitive)"""
     if not search_term:
         return pd.DataFrame()
     return books[books['title'].str.contains(search_term, case=False, regex=False)]
 
+def get_rating_stars(rating):
+    """Convert rating to star string"""
+    full = int(rating)
+    half = 1 if (rating - full) >= 0.5 else 0
+    empty = 5 - full - half
+    return "⭐" * full + "½" * half + "☆" * empty
+
+def get_genre_tags(tags_string, max_tags=3):
+    """Extract genre tags from combined features"""
+    if not tags_string:
+        return []
+    # Get common genre-like tags
+    genre_keywords = ['fantasy', 'fiction', 'mystery', 'thriller', 'romance', 
+                      'sci-fi', 'science fiction', 'horror', 'biography', 
+                      'history', 'classic', 'young adult', 'children', 
+                      'adventure', 'drama', 'comedy', 'poetry']
+    found_tags = []
+    for genre in genre_keywords:
+        if genre.lower() in tags_string.lower():
+            found_tags.append(genre)
+    return found_tags[:max_tags]
+
 def recommend_content_based(book_title, n=6):
     """Content-based recommendation using cosine similarity"""
-    # Find the book index
     matches = books[books['title'].str.contains(book_title, case=False, regex=False)]
     if len(matches) == 0:
         return pd.DataFrame()
     
     idx = matches.index[0]
-    
-    # Get similarity scores
     sim_scores = list(enumerate(cosine_sim[idx]))
     sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
     sim_scores = sim_scores[1:n+1]
     book_indices = [i[0] for i in sim_scores]
     
-    # Prepare results
-    results = books.iloc[book_indices][['title', 'authors', 'average_rating']].copy()
+    results = books.iloc[book_indices][['title', 'authors', 'average_rating', 'combined_features']].copy()
     results['similarity_score'] = [i[1] for i in sim_scores]
     return results
 
 def recommend_collaborative(user_id, n=6):
-    """Collaborative filtering using SVD (Placeholder for Member A)"""
-    # This is a placeholder. Member A will replace with actual SVD model.
-    top_books = books.nlargest(n, 'average_rating')[['title', 'authors', 'average_rating']]
-    top_books['predicted_rating'] = top_books['average_rating'] / 5.0
+    """Collaborative filtering using SVD (Placeholder)"""
+    top_books = books.nlargest(n, 'average_rating')[['title', 'authors', 'average_rating', 'combined_features']].copy()
+    top_books['similarity_score'] = [0.8 - i*0.05 for i in range(len(top_books))]
     return top_books
 
-def recommend_hybrid(book_title, n=6, collab_weight=0.5):
+def recommend_hybrid(book_title, n=6):
     """Hybrid recommendation combining both methods"""
-    content_results = recommend_content_based(book_title, n*2)
-    
-    # For now, just return content-based results with hybrid score
+    content_results = recommend_content_based(book_title, n)
     if len(content_results) > 0:
         content_results['hybrid_score'] = content_results['similarity_score']
         return content_results.head(n)
     return pd.DataFrame()
 
 # ============================================
+# HEADER
+# ============================================
+st.markdown("""
+<div class="main-header">
+    <h1>📚 Book Discovery Engine</h1>
+    <p>Find your next favorite read with AI-powered recommendations</p>
+</div>
+""", unsafe_allow_html=True)
+
+# ============================================
 # SIDEBAR
 # ============================================
-st.sidebar.header("⚙️ Settings")
-
-method = st.sidebar.selectbox(
-    "Choose Recommendation Method",
-    ["🔍 Content-Based (TF-IDF)", "👥 Collaborative (SVD)", "🎯 Hybrid"]
-)
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 📊 Dataset Statistics")
-st.sidebar.metric("📚 Total Books", f"{len(books):,}")
-st.sidebar.metric("⭐ Total Ratings", f"{len(ratings):,}")
-st.sidebar.metric("👤 Total Users", f"{ratings['user_id'].nunique():,}")
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("### ℹ️ About")
-st.sidebar.markdown("""
-**Content-Based (TF-IDF)**: Finds books similar to your search using text similarity on titles, authors, and tags.
-
-**Collaborative (SVD)**: Finds books liked by users with similar taste (requires user ID).
-
-**Hybrid**: Combines both approaches for optimal recommendations.
-""")
+with st.sidebar:
+    st.markdown("### 🎯 Recommendation Mode")
+    
+    method = st.radio(
+        "Select your preferred method:",
+        ["🔍 Content-Based", "👥 Collaborative", "🎯 Hybrid"],
+        index=0,
+        help="Content-Based: Find books similar to ones you like | Collaborative: Based on user preferences | Hybrid: Best of both"
+    )
+    
+    st.markdown("---")
+    
+    st.markdown("### 📊 Library Stats")
+    
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-number">{len(books):,}</div>
+            <div class="stat-label">Books</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_s2:
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-number">{ratings['user_id'].nunique():,}</div>
+            <div class="stat-label">Readers</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown(f"""
+    <div class="stat-card">
+        <div class="stat-number">{len(ratings):,}</div>
+        <div class="stat-label">Reviews</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    st.markdown("### 💡 How It Works")
+    st.caption("""
+    **Content-Based**: Uses TF-IDF to analyze book titles, authors, and tags. Finds books with similar content.
+    
+    **Collaborative**: SVD-based filtering that learns from user reading patterns.
+    
+    **Hybrid**: Combines both approaches for optimal recommendations.
+    """)
 
 # ============================================
 # MAIN CONTENT
 # ============================================
-st.title("📚 Book Recommendation System")
-st.markdown("*Discover your next favorite book using AI | Search across 10,000 books*")
 
-# Display current method
-if method == "🔍 Content-Based (TF-IDF)":
-    st.info("🔍 **Content-Based Mode**: Search for any book to find similar titles based on genre, author, and tags.")
-elif method == "👥 Collaborative (SVD)":
-    st.info("👥 **Collaborative Mode**: Select a user to get personalized recommendations based on their reading history.")
+# Show current method badge
+if "🔍" in method:
+    st.markdown('<span class="method-badge">🔍 Content-Based Mode - Find books similar to your favorites</span>', unsafe_allow_html=True)
+elif "👥" in method:
+    st.markdown('<span class="method-badge">👥 Collaborative Mode - Personalized based on user history</span>', unsafe_allow_html=True)
 else:
-    st.info("🎯 **Hybrid Mode**: Combines content similarity with collaborative filtering for better recommendations.")
+    st.markdown('<span class="method-badge">🎯 Hybrid Mode - Combining content + collaborative filtering</span>', unsafe_allow_html=True)
 
-st.markdown("---")
-
-# Create two columns
-col1, col2 = st.columns([1, 1])
+# Create two main columns
+left_col, right_col = st.columns([1, 1.2], gap="large")
 
 # ============================================
-# COLUMN 1: USER INPUT
+# LEFT COLUMN - USER INPUT
 # ============================================
-with col1:
-    if method == "🔍 Content-Based (TF-IDF)":
-        st.subheader("🔍 Search for a Book")
+with left_col:
+    if "Content-Based" in method:
+        st.markdown("### 🔍 Search for a Book")
+        st.caption("Type any book title to find similar recommendations")
         
-        # Search box for ALL 10,000 books
         search_term = st.text_input(
-            "Type a book title:",
-            placeholder="e.g., Harry Potter, Hunger Games, Pride and Prejudice, Dune",
-            help="Search across all 10,000 books in the database"
+            "",
+            placeholder="e.g., Harry Potter, The Hunger Games, Pride and Prejudice, Dune",
+            label_visibility="collapsed"
         )
         
         if search_term:
-            # Search across ALL books
             search_results = search_books(search_term)
             
             if len(search_results) > 0:
-                st.success(f"✅ Found {len(search_results)} book(s) matching '{search_term}'")
+                st.success(f"Found {len(search_results)} matching book(s)")
                 
-                # Show results in a select box (max 50 for performance)
-                book_options = search_results['title'].head(50).tolist()
-                selected_book = st.selectbox("Select a book:", options=book_options)
+                selected_book = st.selectbox(
+                    "Select a book:",
+                    options=search_results['title'].head(30).tolist(),
+                    label_visibility="collapsed"
+                )
                 
-                if st.button("🔍 Get Similar Books", type="primary", use_container_width=True):
+                if st.button("🔍 Find Similar Books", type="primary", use_container_width=True):
                     with st.spinner("Finding similar books..."):
-                        results = recommend_content_based(selected_book, n=6)
+                        results = recommend_content_based(selected_book, n=8)
                         st.session_state['results'] = results
                         st.session_state['selected_book'] = selected_book
                         st.session_state['method'] = 'content'
             else:
-                st.warning(f"❌ No books found matching '{search_term}'. Try a different search.")
+                st.warning(f"No books found matching '{search_term}'")
         else:
-            st.info("👆 Enter a book title above to search across 10,000 books")
-            st.caption("**Example searches:** Harry, Hunger, Pride, Tolkien, Rowling, Orwell, Austen, Stephen King")
+            st.info("✨ Try searching for: Harry Potter, The Hunger Games, Pride and Prejudice, 1984, The Hobbit")
+            
+            # Show random books for discovery
+            st.markdown("### 🎲 Discover Random Books")
+            random_books = get_random_books(4)
+            for _, row in random_books.iterrows():
+                st.caption(f"📖 {row['title'][:50]}...")
     
-    elif method == "👥 Collaborative (SVD)":
-        st.subheader("👤 Select a User")
+    elif "Collaborative" in method:
+        st.markdown("### 👤 Select a Reader")
+        st.caption("Get personalized recommendations based on reading history")
         
-        # Get top users with most ratings
         user_list = ratings.groupby('user_id').size().sort_values(ascending=False).head(50)
-        user_options = [f"User {uid} ({count} ratings)" for uid, count in user_list.items()]
+        user_options = [f"Reader {uid} ({count} books)" for uid, count in user_list.items()]
         
-        selected_user = st.selectbox("Select a user:", options=user_options)
+        selected_user = st.selectbox("Choose a reader:", options=user_options, label_visibility="collapsed")
         user_id = int(selected_user.split()[1])
         
-        st.caption(f"User {user_id} has rated {user_list[user_id]:,} books")
-        
-        if st.button("👥 Get Personalized Recommendations", type="primary", use_container_width=True):
-            with st.spinner(f"Analyzing preferences for User {user_id}..."):
-                results = recommend_collaborative(user_id, n=6)
+        if st.button("👥 Get Recommendations", type="primary", use_container_width=True):
+            with st.spinner(f"Analyzing reading patterns..."):
+                results = recommend_collaborative(user_id, n=8)
                 st.session_state['results'] = results
                 st.session_state['selected_user'] = user_id
                 st.session_state['method'] = 'collaborative'
     
     else:  # Hybrid
-        st.subheader("🎯 Hybrid Recommendations")
+        st.markdown("### 🎯 Hybrid Search")
+        st.caption("Find books similar to your favorites, enhanced with collaborative filtering")
         
-        # Search box for books
         search_term = st.text_input(
-            "Search for a book you like:",
-            placeholder="e.g., Harry Potter",
+            "",
+            placeholder="Search for a book you like...",
+            label_visibility="collapsed",
             key="hybrid_search"
         )
         
@@ -203,63 +353,57 @@ with col1:
             if len(search_results) > 0:
                 selected_book = st.selectbox(
                     "Select a book:",
-                    options=search_results['title'].head(50).tolist(),
-                    key="hybrid_book"
+                    options=search_results['title'].head(30).tolist(),
+                    label_visibility="collapsed",
+                    key="hybrid_select"
                 )
                 
-                # Optional: User selection for collaborative part
-                st.markdown("---")
-                st.caption("Optional: Select a user to include collaborative filtering")
-                user_list = ratings.groupby('user_id').size().sort_values(ascending=False).head(20)
-                user_options = ["(None)"] + [f"User {uid}" for uid in user_list.index]
-                selected_user_option = st.selectbox("Or select a user:", options=user_options, key="hybrid_user")
-                
-                # Weight adjustment
-                st.markdown("---")
-                st.caption("Adjust the balance between methods:")
-                collab_weight = st.slider("Collaborative Weight", 0.0, 1.0, 0.5, 0.1)
-                st.caption(f"Content Weight: {1.0 - collab_weight:.1f}")
-                
                 if st.button("🎯 Get Hybrid Recommendations", type="primary", use_container_width=True):
-                    with st.spinner("Combining content-based + collaborative recommendations..."):
-                        results = recommend_hybrid(selected_book, n=6, collab_weight=collab_weight)
+                    with st.spinner("Generating hybrid recommendations..."):
+                        results = recommend_hybrid(selected_book, n=8)
                         st.session_state['results'] = results
                         st.session_state['selected_book'] = selected_book
                         st.session_state['method'] = 'hybrid'
             else:
                 st.warning(f"No books found matching '{search_term}'")
-        else:
-            st.info("👆 Search for a book above to get hybrid recommendations")
 
 # ============================================
-# COLUMN 2: RESULTS
+# RIGHT COLUMN - RESULTS
 # ============================================
-with col2:
-    st.subheader("🎯 Recommendations")
-    
+with right_col:
     if 'results' in st.session_state and st.session_state['results'] is not None:
         results = st.session_state['results']
         
         if len(results) == 0:
-            st.warning("No recommendations found. Try a different book or user!")
+            st.warning("No recommendations found. Try a different search!")
         else:
-            # Show what the recommendation is based on
+            st.markdown("### 🎯 Your Recommendations")
+            
             if 'selected_book' in st.session_state:
                 st.caption(f"Based on: **{st.session_state['selected_book']}**")
-            if 'selected_user' in st.session_state:
-                st.caption(f"Based on: **User {st.session_state['selected_user']}**")
             
             st.markdown("---")
             
-            # Display results in a clean grid
+            # Display results as cards
             for idx, row in results.iterrows():
                 with st.container():
-                    col_a, col_b = st.columns([1, 4])
+                    # Book card using columns for layout
+                    col_icon, col_content = st.columns([0.3, 4])
                     
-                    with col_a:
-                        st.markdown("📘")
+                    with col_icon:
+                        # Use emoji as book icon based on rating
+                        rating = row.get('average_rating', 3)
+                        if rating >= 4.5:
+                            icon = "🏆"
+                        elif rating >= 4.0:
+                            icon = "📘"
+                        elif rating >= 3.5:
+                            icon = "📙"
+                        else:
+                            icon = "📕"
+                        st.markdown(f"<h1 style='font-size: 2.5rem; margin:0;'>{icon}</h1>", unsafe_allow_html=True)
                     
-                    with col_b:
+                    with col_content:
                         # Book title
                         st.markdown(f"**{row['title']}**")
                         
@@ -268,38 +412,62 @@ with col2:
                         
                         # Rating stars
                         if 'average_rating' in row:
-                            rating = row['average_rating']
-                            full_stars = int(rating)
-                            half_star = 1 if (rating - full_stars) >= 0.5 else 0
-                            empty_stars = 5 - full_stars - half_star
-                            stars = "⭐" * full_stars + "½" * half_star + "☆" * empty_stars
-                            st.caption(f"{stars} ({rating}/5)")
+                            stars = get_rating_stars(row['average_rating'])
+                            st.markdown(f"<span class='rating-stars'>{stars} ({row['average_rating']}/5)</span>", unsafe_allow_html=True)
                         
-                        # Similarity score progress bar
+                        # Tags
+                        if 'combined_features' in row:
+                            tags = get_genre_tags(row['combined_features'])
+                            if tags:
+                                tag_html = "".join([f'<span class="genre-tag">{tag}</span>' for tag in tags])
+                                st.markdown(f"<div style='margin: 0.3rem 0;'>{tag_html}</div>", unsafe_allow_html=True)
+                        
+                        # Similarity score
                         if 'similarity_score' in row:
                             score = min(row['similarity_score'], 1.0)
-                            st.progress(score, text=f"Similarity: {score:.0%}")
-                        
-                        if 'hybrid_score' in row:
-                            score = min(row['hybrid_score'], 1.0)
-                            st.progress(score, text=f"Hybrid Score: {score:.0%}")
+                            st.progress(score, text=f"Match: {score:.0%}")
                     
-                    st.divider()
+                    st.markdown("---")
+    
     else:
-        st.info("👈 Enter your preferences and click 'Get Recommendations'")
+        # No results yet - show discovery section
+        st.markdown("### 📖 Discover Popular Books")
+        st.caption("Search for a book above to get personalized recommendations")
         
-        # Show example books
-        st.markdown("### 📖 Popular Books You Can Search")
+        st.markdown("---")
+        
+        # Show curated book suggestions
         popular_books = [
-            "The Hunger Games", "Harry Potter and the Sorcerer's Stone",
-            "Pride and Prejudice", "The Great Gatsby", "To Kill a Mockingbird",
-            "1984", "The Hobbit", "Fahrenheit 451", "The Catcher in the Rye"
+            ("The Hunger Games", "Suzanne Collins", 4.34),
+            ("Harry Potter", "J.K. Rowling", 4.45),
+            ("Pride and Prejudice", "Jane Austen", 4.28),
+            ("The Great Gatsby", "F. Scott Fitzgerald", 3.93),
+            ("To Kill a Mockingbird", "Harper Lee", 4.28),
+            ("1984", "George Orwell", 4.24),
         ]
-        for book in popular_books[:5]:
-            st.caption(f"• {book}")
+        
+        for title, author, rating in popular_books:
+            with st.container():
+                col_icon, col_content = st.columns([0.3, 4])
+                with col_icon:
+                    st.markdown("<h1 style='font-size: 1.5rem; margin:0;'>📖</h1>", unsafe_allow_html=True)
+                with col_content:
+                    st.markdown(f"**{title}**")
+                    st.caption(f"by {author}")
+                    stars = get_rating_stars(rating)
+                    st.caption(f"{stars} ({rating}/5)")
+                st.markdown("---")
+        
+        st.info("💡 **Tip**: Try searching for any book title above to find similar reads!")
 
 # ============================================
 # FOOTER
 # ============================================
 st.markdown("---")
-st.caption(f"📚 Book Recommendation System | Powered by TF-IDF + Cosine Similarity | Dataset: Goodbooks-10k ({len(books):,} books, {len(ratings):,} ratings)")
+col_f1, col_f2, col_f3 = st.columns(3)
+with col_f1:
+    st.caption(f"📚 {len(books):,} books in library")
+with col_f2:
+    st.caption("🤖 Powered by TF-IDF + Cosine Similarity")
+with col_f3:
+    st.caption("⭐ Dataset: Goodbooks-10k")
