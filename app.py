@@ -1,4 +1,4 @@
-# app.py - Book Recommendation System
+# app.py - Book Recommendation System (1000 Books)
 # Run with: streamlit run app.py
 
 import streamlit as st
@@ -110,6 +110,11 @@ This system uses:
 - **Hybrid**: Combines both approaches
 """)
 
+# Display total books available in sidebar
+st.sidebar.markdown("---")
+st.sidebar.metric("📚 Total Books Available", f"{len(books):,}")
+st.sidebar.caption("Showing first 1,000 books in dropdown")
+
 # Main content area
 col1, col2 = st.columns([1, 1])
 
@@ -117,10 +122,11 @@ with col1:
     st.subheader("📖 Tell us what you like")
     
     if method == "Content-Based":
+        # ✅ CHANGED: From 100 to 1000 books
         book_input = st.selectbox(
             "Select a book you enjoy:",
-            options=books['title'].head(100).tolist(),
-            help="Start typing to search"
+            options=books['title'].head(1000).tolist(),  # ← 1000 books!
+            help="Scroll through 1,000 popular books"
         )
         
         if st.button("🔍 Get Recommendations", type="primary"):
@@ -146,10 +152,12 @@ with col1:
     else:  # Hybrid
         st.info("Hybrid method combines both approaches for better recommendations")
         
+        # ✅ CHANGED: From 100 to 1000 books for Hybrid too
         book_input = st.selectbox(
             "Select a book you enjoy:",
-            options=books['title'].head(100).tolist(),
-            key="hybrid_book"
+            options=books['title'].head(1000).tolist(),  # ← 1000 books!
+            key="hybrid_book",
+            help="Scroll through 1,000 popular books"
         )
         
         if st.button("🔍 Get Recommendations", type="primary"):
@@ -180,7 +188,8 @@ with col2:
                             stars = "⭐" * int(round(row['average_rating']))
                             st.caption(f"{stars} ({row['average_rating']}/5)")
                         if 'similarity_score' in row:
-                            st.progress(row['similarity_score'], text=f"Match: {row['similarity_score']:.0%}")
+                            # Show similarity score as progress bar
+                            st.progress(min(row['similarity_score'], 1.0), text=f"Match: {row['similarity_score']:.0%}")
                     st.divider()
     else:
         st.info("👈 Select a method and enter your preferences, then click 'Get Recommendations'")
@@ -189,4 +198,4 @@ with col2:
 # FOOTER
 # ============================================
 st.markdown("---")
-st.caption("Book Recommendation System | Built with Streamlit | Dataset: Goodbooks-10k")
+st.caption("Book Recommendation System | Built with Streamlit | Dataset: Goodbooks-10k (10,000 books total)")
